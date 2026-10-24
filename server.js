@@ -7,10 +7,12 @@ import { DatabaseSync } from 'node:sqlite';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = resolve(ROOT, 'public');
-const DATA_DIR = resolve(ROOT, 'data');
+const DATA_DIR = resolve(process.env.DATA_DIR || resolve(ROOT, 'data'));
 const DB_PATH = resolve(DATA_DIR, 'devoluciones.sqlite');
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 3000);
+const BASE_PATH = normalizeBasePath(process.env.BASE_PATH || '');
+const BASE_HREF = BASE_PATH ? `${BASE_PATH}/` : '/';
 const TIME_ZONE = 'Europe/Madrid';
 
 mkdirSync(DATA_DIR, { recursive: true });
@@ -57,6 +59,26 @@ const mimeTypes = {
   '.js': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml',
 };
+
+function normalizeBasePath(value) {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === '/') return '';
+
+  const segments = trimmed.split('/').filter(Boolean);
+  if (segments.length === 0) return '';
+  if (segments.some((segment) => !/^[A-Za-z0-9._~-]+$/.test(segment) || segment === '.' || segment === '..')) {
+    throw new Error('BASE_PATH debe ser una ruta válida, por ejemplo /CuentaClara.');
+  }
+  return `/${segments.join('/')}`;
+}
+
+function stripBasePath(pathname) {
+  if (!BASE_PATH) return pathname;
+  if (pathname === BASE_PATH) return '/';
+  if (pathname.startsWith(`${BASE_PATH}/`)) return pathname.slice(BASE_PATH.length) || '/';
+  // Coolify strips the configured prefix by default. Accept those requests too.
+  return pathname;
+}
 
 function dateTimeInMadrid(date) {
   const parts = new Intl.DateTimeFormat('en-GB', {
@@ -129,7 +151,10 @@ async function serveStatic(pathname, response) {
 
   try {
     if (!(await stat(filePath)).isFile()) throw new Error('No es un archivo.');
-    const body = await readFile(filePath);
+    let body = await readFile(filePath);
+    if (filePath === resolve(PUBLIC_DIR, 'index.html')) {
+      body = Buffer.from(body.toString('utf8').replace('__BASE_HREF__', BASE_HREF));
+    }
     response.writeHead(200, {
       'content-type': mimeTypes[extname(filePath)] || 'application/octet-stream',
       'cache-control': 'no-cache',
@@ -142,8 +167,9 @@ async function serveStatic(pathname, response) {
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
+  const pathname = stripBasePath(url.pathname);
 
-  if (url.pathname === '/api/returns' && request.method === 'GET') {
+  if (pathname === '/api/returns' && request.method === 'GET') {
     const now = new Date();
     const today = dateTimeInMadrid(now).date;
     const latestDate = getLatestDate.get().date || null;
@@ -168,7 +194,7 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  if (url.pathname === '/api/returns' && request.method === 'POST') {
+  if (pathname === '/api/returns' && request.method === 'POST') {
     try {
       const body = await readJson(request);
       const paidTotalCents = toCents(body.paidTotal, 'El importe pagado');
@@ -201,7 +227,7 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  if (url.pathname.startsWith('/api/')) {
+  if (pathname.startsWith('/api/')) {
     sendJson(response, 404, { error: 'Ruta de API no encontrada.' });
     return;
   }
@@ -211,7 +237,7 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  await serveStatic(url.pathname, response);
+  await serveStatic(pathname, response);
 });
 
 server.listen(PORT, HOST, () => {

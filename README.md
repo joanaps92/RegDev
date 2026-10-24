@@ -1,12 +1,12 @@
 # Caja de devoluciones
 
-Aplicación web local para calcular el importe restante tras una devolución y consultar los movimientos por día.
+Aplicación web para calcular el importe restante tras una devolución y consultar los movimientos por día.
 
 ## Requisitos
 
-- Node.js 22.13 o posterior. La aplicación usa `node:sqlite`, incluido en Node.js, y no necesita instalar dependencias.
+- Node.js 22.13 o posterior. La aplicación usa `node:sqlite`, incluido en Node.js, y no necesita dependencias externas.
 
-## Iniciar
+## Iniciar en local
 
 Desde esta carpeta, ejecuta:
 
@@ -14,264 +14,102 @@ Desde esta carpeta, ejecuta:
 npm start
 ```
 
-Abre <http://127.0.0.1:3000> en el navegador. Para cambiar el puerto, define `PORT` antes de iniciar el servidor.
+Abre <http://127.0.0.1:3000> en el navegador. Puedes cambiar el puerto con `PORT` y el host con `HOST`. En Coolify, el Dockerfile configura el host interno como `0.0.0.0` para que el proxy pueda acceder al servidor.
 
-## Datos
+## Datos y configuración
 
-Los importes se guardan como céntimos enteros en SQLite. La base de datos se crea automáticamente en `data/devoluciones.sqlite`; la fecha y hora de cada movimiento usan la zona horaria `Europe/Madrid`. La carpeta `data/` se excluye de Git para mantener los registros del equipo fuera del código fuente.
+Los importes se guardan como céntimos enteros en SQLite. La base de datos se crea en `data/devoluciones.sqlite` en local o en la carpeta indicada por `DATA_DIR`. La fecha y hora de cada movimiento usan la zona horaria `Europe/Madrid`.
 
 La pantalla abre por defecto el día más reciente con movimientos. El selector de fecha permite consultar los demás días; cada nuevo cálculo se guarda con la fecha y hora actuales.
 
-## Despliegue en un servidor web
+Variables de entorno:
 
-Esta guía usa un VPS con Ubuntu Server 24.04, Node.js 24 LTS, Nginx y un dominio propio. La aplicación no incluye cuentas de usuario: Nginx añadirá una contraseña compartida y Certbot activará HTTPS. No publiques el sitio sin esa protección; cualquier persona que llegue a la aplicación podría consultar el histórico y guardar movimientos.
+| Variable | Valor por defecto | Uso |
+| --- | --- | --- |
+| `HOST` | `0.0.0.0` | Interfaz donde escucha Node.js. |
+| `PORT` | `3000` | Puerto interno del servidor. |
+| `BASE_PATH` | vacío | Prefijo público, por ejemplo `/CuentaClara`. |
+| `DATA_DIR` | `data/` del proyecto | Carpeta que contiene la base SQLite. |
 
-### 1. Preparar el dominio y el VPS
+## Desplegar en Coolify bajo `joanaps.dev/CuentaClara`
 
-Necesitas:
+El repositorio incluye un `Dockerfile` listo para desplegar como aplicación Dockerfile desde Git. Coolify construye la imagen, enruta el dominio y puede emitir el certificado HTTPS. La app conserva el prefijo `/CuentaClara` tanto si el proxy de Coolify lo elimina antes de reenviar la petición como si conserva la ruta completa.
 
-- Un VPS Ubuntu Server 24.04 con acceso SSH y permisos `sudo`.
-- Un dominio o subdominio, por ejemplo `devoluciones.ejemplo.es`, cuyo registro DNS `A` apunte a la IP pública del VPS.
-- En el cortafuegos del proveedor, permitir SSH y los puertos TCP 80 y 443. No abras el puerto 3000.
+### 1. Preparar el dominio y Coolify
 
-Los comandos siguientes usan `devoluciones.ejemplo.es` como ejemplo. Sustitúyelo por tu dominio.
+1. Crea o revisa el registro DNS `A` de `joanaps.dev` y apunta a la IP pública del VPS.
+2. Comprueba que los puertos TCP `80` y `443` llegan al proxy de Coolify. No hace falta publicar el puerto `3000` en Internet.
+3. En Coolify, confirma que el servidor usa el proxy integrado (Traefik o Caddy) y que está iniciado.
 
-### 2. Instalar Node.js, Nginx y herramientas
+Si `joanaps.dev` ya sirve otra web, la ruta `/CuentaClara` puede compartir ese mismo dominio mediante una ruta por prefijo de Coolify. Revisa que no exista ya otra aplicación asignada a esa misma ruta.
 
-Conéctate al VPS por SSH y ejecuta:
+### 2. Crear la aplicación desde Git
 
-```sh
-sudo apt update
-sudo apt install -y ca-certificates curl nginx apache2-utils snapd rsync ufw
+1. En Coolify, abre un proyecto y un entorno, pulsa **New Resource** y crea una aplicación desde el proveedor Git conectado. También puedes usar el repositorio público `https://github.com/joanaps92/RegDev.git`.
+2. Selecciona la rama `main`.
+3. En **Build Pack** o método de construcción, elige **Dockerfile**.
+4. Deja **Base Directory** como `/` y configura **Dockerfile Location** como `/Dockerfile` (o `Dockerfile`, según la versión del panel).
+5. Guarda la aplicación.
 
-curl -fsSL https://deb.nodesource.com/setup_24.x -o /tmp/nodesource_setup.sh
-sudo -E bash /tmp/nodesource_setup.sh
-sudo apt install -y nodejs
+### 3. Configurar el puerto y las variables
 
-node --version
-npm --version
+En la configuración general de la aplicación establece **Ports Exposes** en `3000`. No añadas un mapeo de puerto público.
+
+En **Environment Variables**, añade estos valores de ejecución:
+
+```text
+HOST=0.0.0.0
+PORT=3000
+BASE_PATH=/CuentaClara
+DATA_DIR=/data
 ```
 
-Comprueba que Node.js sea 22.13 o posterior. La aplicación no necesita `npm install`: no tiene dependencias externas.
+El Dockerfile ya incluye estos valores; declararlos en Coolify deja visible la configuración del despliegue y permite cambiarla desde el panel.
 
-### 3. Crear el usuario y las carpetas de la aplicación
+### 4. Guardar los movimientos en almacenamiento persistente
 
-El proceso de Node se ejecutará como un usuario del sistema sin acceso interactivo:
+Los contenedores se reemplazan en cada despliegue. Si SQLite queda en el sistema de archivos temporal del contenedor, podrías perder movimientos. Antes del primer despliegue:
 
-```sh
-sudo useradd --system --home /var/lib/caja-devoluciones --create-home --shell /usr/sbin/nologin caja-devoluciones
-sudo install -d -o root -g root -m 755 /opt/caja-devoluciones/app
-```
+1. Abre **Persistent Storage** en la configuración de la aplicación.
+2. Añade un **Volume Mount** administrado por Docker.
+3. Configura **Destination Path** como `/data`.
+4. Guarda el montaje.
 
-En el VPS, prepara una carpeta temporal para recibir los archivos:
+El contenedor ejecuta Node como el usuario `node`; el Dockerfile prepara `/data` con permisos para ese usuario. Comprueba que Coolify monte el volumen en esa ruta y que la app pueda escribir en él antes de registrar devoluciones reales. El volumen evita que los despliegues normales eliminen los datos, pero no sustituye a las copias de seguridad.
 
-```sh
-mkdir -p ~/caja-devoluciones-upload
-```
+### 5. Añadir el dominio y la ruta
 
-Desde tu ordenador, abre una terminal en la carpeta del proyecto (la que contiene `package.json`) y copia el código. Cambia `USUARIO_SSH` y `IP_O_DOMINIO` por los datos de acceso al VPS:
+En **Domains**, pulsa **Add domain** y rellena los campos:
 
-```sh
-rsync -av --exclude='.git/' --exclude='data/' ./ USUARIO_SSH@IP_O_DOMINIO:~/caja-devoluciones-upload/
-```
+- **Protocol:** `https`
+- **Domain:** `joanaps.dev`
+- **Port:** `3000`
+- **Path:** `/CuentaClara`
 
-Vuelve a la terminal del VPS y copia los archivos a la ubicación definitiva:
+La URL resultante será `https://joanaps.dev/CuentaClara`. Deja desactivado **Keep paths as-is in Path prefixes** si aparece en **Advanced > Proxy**; esa es la opción predeterminada. La aplicación también admite esa opción activada.
 
-```sh
-sudo rsync -a --delete --exclude='data/' ~/caja-devoluciones-upload/ /opt/caja-devoluciones/app/
-sudo chown -R root:root /opt/caja-devoluciones/app
-sudo install -d -o caja-devoluciones -g caja-devoluciones -m 750 /opt/caja-devoluciones/app/data
-```
+Coolify gestiona el enrutamiento y el certificado TLS. Si no se emite el certificado, comprueba el DNS y que los puertos `80` y `443` del VPS lleguen al proxy.
 
-La carpeta `data/` se excluye al copiar el código para que las actualizaciones no borren la base de datos.
+### 6. Proteger el acceso y desplegar
 
-#### Opcional: trasladar registros de este equipo
+La aplicación todavía no tiene cuentas de usuario propias. Para que el histórico y el formulario no queden abiertos a cualquier visitante:
 
-Si ya tienes movimientos en `data/devoluciones.sqlite`, cierra la aplicación local antes de copiar ese archivo. En el VPS, crea la carpeta temporal:
+1. En **General > Security > Authentication**, activa **HTTP Basic Authentication**.
+2. Crea un usuario y una contraseña robusta. Guárdala en un gestor de contraseñas; no la pongas en el Dockerfile ni en Git. Mantén **Container labels > Label management** en el modo administrado por Coolify para que genere las reglas de autenticación del proxy.
+3. Despliega la aplicación desde Coolify.
 
-```sh
-mkdir -p ~/caja-devoluciones-upload/data
-```
+Al terminar, abre `https://joanaps.dev/CuentaClara`. El navegador debe pedir las credenciales y, después, mostrar el calculador y el histórico.
 
-Desde el ordenador local, en la carpeta del proyecto:
+### 7. Actualizar y respaldar
 
-```sh
-rsync -av data/devoluciones.sqlite USUARIO_SSH@IP_O_DOMINIO:~/caja-devoluciones-upload/data/
-```
+Cuando publiques cambios en la rama `main`, Coolify puede desplegarlos automáticamente si activas los despliegues automáticos del repositorio. También puedes iniciar el despliegue manualmente desde la aplicación.
 
-En el VPS, antes de iniciar el servicio por primera vez:
-
-```sh
-sudo install -o caja-devoluciones -g caja-devoluciones -m 640 \
-  ~/caja-devoluciones-upload/data/devoluciones.sqlite \
-  /opt/caja-devoluciones/app/data/devoluciones.sqlite
-```
-
-### 4. Configurar el servicio de Node
-
-Crea el servicio de `systemd`:
-
-```sh
-sudo nano /etc/systemd/system/caja-devoluciones.service
-```
-
-Pega este contenido:
-
-```ini
-[Unit]
-Description=Caja de devoluciones
-After=network.target
-
-[Service]
-Type=simple
-User=caja-devoluciones
-Group=caja-devoluciones
-WorkingDirectory=/opt/caja-devoluciones/app
-Environment=NODE_ENV=production
-Environment=HOST=127.0.0.1
-Environment=PORT=3000
-ExecStart=/usr/bin/node /opt/caja-devoluciones/app/server.js
-Restart=on-failure
-RestartSec=5
-ProtectSystem=strict
-ProtectHome=true
-PrivateTmp=true
-NoNewPrivileges=true
-ReadWritePaths=/opt/caja-devoluciones/app/data
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Guarda el archivo y activa el servicio:
-
-```sh
-sudo systemctl daemon-reload
-sudo systemctl enable --now caja-devoluciones
-sudo systemctl status caja-devoluciones --no-pager
-curl -I http://127.0.0.1:3000
-```
-
-La base de datos se creará en `/opt/caja-devoluciones/app/data/devoluciones.sqlite`.
-
-### 5. Configurar Nginx y la contraseña
-
-Crea un usuario y contraseña para abrir la aplicación. Nginx pedirá estas credenciales en el navegador:
-
-```sh
-sudo htpasswd -c /etc/nginx/.htpasswd-caja operadora
-sudo chown root:www-data /etc/nginx/.htpasswd-caja
-sudo chmod 640 /etc/nginx/.htpasswd-caja
-```
-
-Para añadir otra cuenta después, ejecuta `sudo htpasswd /etc/nginx/.htpasswd-caja otro-usuario` sin `-c`, para conservar la cuenta anterior.
-
-Crea la configuración del sitio:
-
-```sh
-sudo nano /etc/nginx/sites-available/caja-devoluciones
-```
-
-Pega el bloque siguiente y cambia el dominio de ejemplo:
-
-```nginx
-server {
-    listen 80;
-    listen [::]:80;
-    server_name devoluciones.ejemplo.es;
-
-    location ^~ /.well-known/acme-challenge/ {
-        auth_basic off;
-        root /var/www/html;
-    }
-
-    location / {
-        auth_basic "Caja de devoluciones";
-        auth_basic_user_file /etc/nginx/.htpasswd-caja;
-
-        proxy_pass http://127.0.0.1:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-Activa y revisa la configuración:
-
-```sh
-sudo ln -s /etc/nginx/sites-available/caja-devoluciones /etc/nginx/sites-enabled/caja-devoluciones
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-### 6. Activar HTTPS y limitar el acceso de red
-
-Instala Certbot desde Snap y solicita un certificado para el dominio. El DNS ya debe apuntar al VPS y el puerto 80 debe poder recibir conexiones desde internet:
-
-```sh
-sudo snap install --classic certbot
-sudo ln -sf /snap/bin/certbot /usr/local/bin/certbot
-sudo certbot --nginx -d devoluciones.ejemplo.es
-```
-
-Si Certbot pregunta, elige redirigir HTTP a HTTPS. Después, revisa que la configuración del servidor HTTPS conserve `auth_basic` y `auth_basic_user_file`. Comprueba la renovación automática:
-
-```sh
-sudo certbot renew --dry-run
-```
-
-Activa el cortafuegos del VPS. La regla SSH debe estar permitida antes de activar UFW para no perder el acceso remoto:
-
-```sh
-sudo ufw allow OpenSSH
-sudo ufw allow 'Nginx Full'
-sudo ufw enable
-sudo ufw status
-```
-
-No permitas conexiones externas al puerto 3000. Nginx es el único punto de entrada, y el servicio Node escucha solo en `127.0.0.1`.
-
-### 7. Comprobar el acceso
-
-Abre `https://devoluciones.ejemplo.es` en un navegador. Debe solicitar el usuario y la contraseña de Nginx y, tras introducirlos, mostrar la aplicación. En el VPS puedes consultar el estado y los registros del servicio con:
-
-```sh
-sudo systemctl status caja-devoluciones --no-pager
-sudo journalctl -u caja-devoluciones -n 50 --no-pager
-```
-
-### Actualizar la aplicación
-
-Desde el ordenador local, vuelve a copiar el código a `~/caja-devoluciones-upload/` con el comando `rsync` del paso 3. En el VPS, aplica los archivos y reinicia el servicio:
-
-```sh
-sudo systemctl stop caja-devoluciones
-sudo rsync -a --delete --exclude='data/' ~/caja-devoluciones-upload/ /opt/caja-devoluciones/app/
-sudo chown -R root:root /opt/caja-devoluciones/app
-sudo chown -R caja-devoluciones:caja-devoluciones /opt/caja-devoluciones/app/data
-sudo systemctl start caja-devoluciones
-sudo systemctl status caja-devoluciones --no-pager
-```
-
-### Copias de seguridad
-
-Detén el servicio antes de copiar SQLite. Así se cierra la base de datos y se evita copiarla mientras está escribiendo:
-
-```sh
-sudo systemctl stop caja-devoluciones
-sudo install -d -m 700 /var/backups/caja-devoluciones
-sudo cp /opt/caja-devoluciones/app/data/devoluciones.sqlite \
-  "/var/backups/caja-devoluciones/devoluciones-$(date +%F-%H%M).sqlite"
-sudo systemctl start caja-devoluciones
-```
-
-Repite esta copia con la frecuencia que necesite el trabajo y guarda además una copia fuera del VPS. Para restaurar una copia, detén el servicio, sustituye `data/devoluciones.sqlite`, asigna el archivo a `caja-devoluciones` y vuelve a iniciar el servicio.
+Configura copias de seguridad del volumen desde Coolify si esa opción está disponible para tu tipo de almacenamiento. Guarda además una copia fuera del VPS y realiza una restauración de prueba antes de depender de ella. Un volumen persistente protege los datos frente a reemplazos de contenedor, pero no frente a fallos o pérdida del servidor.
 
 ### Referencias oficiales
 
+- [Dominios, puertos y rutas con prefijo en Coolify](https://coolify.io/docs/core/networking/domains).
+- [Aplicaciones Dockerfile en Coolify](https://coolify.io/docs/applications/builds/dockerfile).
+- [Almacenamiento persistente en Coolify](https://coolify.io/docs/applications/configuration/persistent-storage).
+- [Autenticación básica en el proxy de Coolify](https://coolify.io/docs/core/networking/proxy/traefik/basic-auth).
 - [Descargas y versiones LTS de Node.js](https://nodejs.org/en/download) y [documentación de `node:sqlite`](https://nodejs.org/api/sqlite.html).
-- [Instrucciones de NodeSource para Debian y Ubuntu](https://github.com/nodesource/distributions#debian-and-ubuntu-based-distributions).
-- [Documentación de proxy de Nginx](https://nginx.org/en/docs/http/ngx_http_proxy_module.html) y [autenticación básica de Nginx](https://nginx.org/en/docs/http/ngx_http_auth_basic_module.html).
-- [Instrucciones de Certbot para Nginx](https://certbot.eff.org/instructions).

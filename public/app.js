@@ -124,8 +124,9 @@ async function loadHistory(date) {
   tableWrap.hidden = true;
   loadingState.hidden = false;
   try {
-    const query = date ? `?date=${encodeURIComponent(date)}` : '';
-    const response = await fetch(`/api/returns${query}`);
+    const url = new URL('api/returns', document.baseURI);
+    if (date) url.searchParams.set('date', date);
+    const response = await fetch(url);
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'No se pudo cargar el histórico.');
     renderHistory(data);
@@ -152,7 +153,7 @@ async function saveReturn(event) {
   calculateButton.disabled = true;
   calculateButton.querySelector('span:first-child').textContent = 'Guardando…';
   try {
-    const response = await fetch('/api/returns', {
+    const response = await fetch(new URL('api/returns', document.baseURI), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
