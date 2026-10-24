@@ -11,6 +11,8 @@ const tableWrap = document.querySelector('#tableWrap');
 const loadingState = document.querySelector('#loadingState');
 const toast = document.querySelector('#toast');
 const textSizeButton = document.querySelector('#textSizeButton');
+const exportMonthInput = document.querySelector('#exportMonth');
+const exportMonthButton = document.querySelector('#exportMonthButton');
 
 const moneyFormatter = new Intl.NumberFormat('es-ES', {
   style: 'currency',
@@ -177,6 +179,44 @@ async function saveReturn(event) {
   }
 }
 
+async function downloadMonthlyExcel() {
+  const month = exportMonthInput.value;
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    showToast('Elige el mes que quieres descargar.');
+    exportMonthInput.focus();
+    return;
+  }
+
+  const originalButtonContent = exportMonthButton.innerHTML;
+  exportMonthButton.disabled = true;
+  exportMonthButton.innerHTML = 'Preparando Excel…';
+
+  try {
+    const url = new URL('api/returns/export', document.baseURI);
+    url.searchParams.set('month', month);
+    const response = await fetch(url);
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || 'No se pudo descargar el Excel.');
+    }
+
+    const fileUrl = URL.createObjectURL(await response.blob());
+    const downloadLink = document.createElement('a');
+    downloadLink.href = fileUrl;
+    downloadLink.download = `devoluciones-${month}.xlsx`;
+    document.body.append(downloadLink);
+    downloadLink.click();
+    downloadLink.remove();
+    window.setTimeout(() => URL.revokeObjectURL(fileUrl), 1000);
+    showToast('Excel mensual descargado.');
+  } catch (error) {
+    showToast(error.message || 'No se pudo descargar el Excel.');
+  } finally {
+    exportMonthButton.disabled = false;
+    exportMonthButton.innerHTML = originalButtonContent;
+  }
+}
+
 function updateTodayLabel() {
   const now = new Date();
   document.querySelector('#todayLabel').textContent = new Intl.DateTimeFormat('es-ES', {
@@ -193,6 +233,13 @@ form.addEventListener('submit', saveReturn);
 dateInput.addEventListener('change', () => {
   if (dateInput.value) loadHistory(dateInput.value);
 });
+const currentMonthParts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/Madrid',
+  year: 'numeric',
+  month: '2-digit',
+}).formatToParts(new Date()).map(({ type, value }) => [type, value]));
+exportMonthInput.value = `${currentMonthParts.year}-${currentMonthParts.month}`;
+exportMonthButton.addEventListener('click', downloadMonthlyExcel);
 textSizeButton.addEventListener('click', () => {
   setExtraLargeText(!document.body.classList.contains('extra-large'));
 });

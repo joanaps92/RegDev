@@ -4,6 +4,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
+import { deflateRawSync } from 'node:zlib';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = resolve(ROOT, 'public');
@@ -51,6 +52,14 @@ const getDailyTotals = db.prepare(`
   SELECT COUNT(*) AS count, COALESCE(SUM(returned_cents), 0) AS returnedCents
   FROM returns
   WHERE business_date = ?
+`);
+const getByMonth = db.prepare(`
+  SELECT id, paid_total_cents AS paidTotalCents,
+         returned_cents AS returnedCents, remaining_cents AS remainingCents,
+         business_date AS date, business_time AS time
+  FROM returns
+  WHERE business_date >= ? AND business_date <= ?
+  ORDER BY business_date ASC, business_time ASC, id ASC
 `);
 
 const mimeTypes = {
@@ -101,6 +110,183 @@ function isDateString(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
+}
+
+function isMonthString(value) {
+  if (typeof value !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) return false;
+  const year = Number(value.slice(0, 4));
+  const date = new Date(`${value}-01T00:00:00Z`);
+  return year > 0 && !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 7) === value;
+}
+
+function monthDateRange(value) {
+  const firstDay = `${value}-01`;
+  const lastDay = new Date(`${firstDay}T00:00:00Z`);
+  lastDay.setUTCMonth(lastDay.getUTCMonth() + 1);
+  lastDay.setUTCDate(0);
+  return [firstDay, lastDay.toISOString().slice(0, 10)];
+}
+
+function escapeXml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
+}
+
+function textCell(reference, value, style = '') {
+  const styleAttribute = style ? ` s="${style}"` : '';
+  return `<c r="${reference}"${styleAttribute} t="inlineStr"><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`;
+}
+
+function numberCell(reference, value, style = '') {
+  const styleAttribute = style ? ` s="${style}"` : '';
+  return `<c r="${reference}"${styleAttribute}><v>${Number(value)}</v></c>`;
+}
+
+const crcTable = Uint32Array.from({ length: 256 }, (_, index) => {
+  let value = index;
+  for (let bit = 0; bit < 8; bit += 1) {
+    value = (value & 1) ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+  }
+  return value >>> 0;
+});
+
+function crc32(buffer) {
+  let checksum = 0xffffffff;
+  for (const byte of buffer) checksum = crcTable[(checksum ^ byte) & 0xff] ^ (checksum >>> 8);
+  return (checksum ^ 0xffffffff) >>> 0;
+}
+
+function zipFiles(files) {
+  const localParts = [];
+  const centralParts = [];
+  let localOffset = 0;
+  const zipDate = 33; // 1 January 1980, the start of the ZIP timestamp range.
+
+  for (const [name, content] of Object.entries(files)) {
+    const filename = Buffer.from(name, 'utf8');
+    const data = Buffer.from(content, 'utf8');
+    const compressed = deflateRawSync(data);
+    const checksum = crc32(data);
+
+    const localHeader = Buffer.alloc(30);
+    localHeader.writeUInt32LE(0x04034b50, 0);
+    localHeader.writeUInt16LE(20, 4);
+    localHeader.writeUInt16LE(0, 6);
+    localHeader.writeUInt16LE(8, 8);
+    localHeader.writeUInt16LE(0, 10);
+    localHeader.writeUInt16LE(zipDate, 12);
+    localHeader.writeUInt32LE(checksum, 14);
+    localHeader.writeUInt32LE(compressed.length, 18);
+    localHeader.writeUInt32LE(data.length, 22);
+    localHeader.writeUInt16LE(filename.length, 26);
+    localHeader.writeUInt16LE(0, 28);
+    localParts.push(localHeader, filename, compressed);
+
+    const centralHeader = Buffer.alloc(46);
+    centralHeader.writeUInt32LE(0x02014b50, 0);
+    centralHeader.writeUInt16LE(20, 4);
+    centralHeader.writeUInt16LE(20, 6);
+    centralHeader.writeUInt16LE(0, 8);
+    centralHeader.writeUInt16LE(8, 10);
+    centralHeader.writeUInt16LE(0, 12);
+    centralHeader.writeUInt16LE(zipDate, 14);
+    centralHeader.writeUInt32LE(checksum, 16);
+    centralHeader.writeUInt32LE(compressed.length, 20);
+    centralHeader.writeUInt32LE(data.length, 24);
+    centralHeader.writeUInt16LE(filename.length, 28);
+    centralHeader.writeUInt16LE(0, 30);
+    centralHeader.writeUInt16LE(0, 32);
+    centralHeader.writeUInt16LE(0, 34);
+    centralHeader.writeUInt16LE(0, 36);
+    centralHeader.writeUInt32LE(0, 38);
+    centralHeader.writeUInt32LE(localOffset, 42);
+    centralParts.push(centralHeader, filename);
+    localOffset += localHeader.length + filename.length + compressed.length;
+  }
+
+  const centralDirectory = Buffer.concat(centralParts);
+  const endRecord = Buffer.alloc(22);
+  endRecord.writeUInt32LE(0x06054b50, 0);
+  endRecord.writeUInt16LE(0, 4);
+  endRecord.writeUInt16LE(0, 6);
+  endRecord.writeUInt16LE(centralParts.length / 2, 8);
+  endRecord.writeUInt16LE(centralParts.length / 2, 10);
+  endRecord.writeUInt32LE(centralDirectory.length, 12);
+  endRecord.writeUInt32LE(localOffset, 16);
+  endRecord.writeUInt16LE(0, 20);
+
+  return Buffer.concat([...localParts, centralDirectory, endRecord]);
+}
+
+function buildMonthlyWorkbook(month, entries) {
+  const monthDate = new Date(`${month}-15T12:00:00Z`);
+  const monthLabel = new Intl.DateTimeFormat('es-ES', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(monthDate);
+  const returnedTotalCents = entries.reduce((total, entry) => total + entry.returnedCents, 0);
+  const headerCells = ['Fecha', 'Hora', 'Total pagado (€)', 'Artículo devuelto (€)', 'Importe restante (€)']
+    .map((value, index) => textCell(`${String.fromCharCode(65 + index)}4`, value, '2'))
+    .join('');
+  const dataRows = entries.map((entry, index) => {
+    const rowNumber = index + 5;
+    const [year, monthNumber, day] = entry.date.split('-');
+    return `<row r="${rowNumber}">${[
+      textCell(`A${rowNumber}`, `${day}/${monthNumber}/${year}`),
+      textCell(`B${rowNumber}`, entry.time),
+      numberCell(`C${rowNumber}`, entry.paidTotalCents / 100, '3'),
+      numberCell(`D${rowNumber}`, entry.returnedCents / 100, '3'),
+      numberCell(`E${rowNumber}`, entry.remainingCents / 100, '3'),
+    ].join('')}</row>`;
+  }).join('');
+  const lastRow = Math.max(4, entries.length + 4);
+  const monthTitle = `Devoluciones — ${monthLabel.charAt(0).toUpperCase()}${monthLabel.slice(1)}`;
+
+  const worksheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:E${lastRow}"/>
+  <sheetViews><sheetView workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
+  <sheetFormatPr defaultRowHeight="18"/>
+  <cols><col min="1" max="1" width="16" customWidth="1"/><col min="2" max="2" width="12" customWidth="1"/><col min="3" max="3" width="21" customWidth="1"/><col min="4" max="4" width="23" customWidth="1"/><col min="5" max="5" width="24" customWidth="1"/></cols>
+  <sheetData>
+    <row r="1" ht="28" customHeight="1">${textCell('A1', monthTitle, '1')}</row>
+    <row r="2">${textCell('A2', 'Devoluciones')}${numberCell('B2', entries.length)}${textCell('C2', 'Importe total devuelto')}${numberCell('D2', returnedTotalCents / 100, '3')}</row>
+    <row r="4" ht="24" customHeight="1">${headerCells}</row>
+    ${dataRows}
+  </sheetData>
+  <autoFilter ref="A4:E${lastRow}"/>
+  <mergeCells count="1"><mergeCell ref="A1:E1"/></mergeCells>
+  <pageMargins left="0.35" right="0.35" top="0.5" bottom="0.5" header="0.2" footer="0.2"/>
+</worksheet>`;
+
+  const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <numFmts count="1"><numFmt numFmtId="164" formatCode="&quot;€&quot; #,##0.00"/></numFmts>
+  <fonts count="3"><font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="16"/><color rgb="FF192B3A"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/><family val="2"/></font></fonts>
+  <fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF087D78"/><bgColor indexed="64"/></patternFill></fill></fills>
+  <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="2" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`;
+
+  return zipFiles({
+    '[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`,
+    '_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+    'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Devoluciones" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+    'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
+    'xl/worksheets/sheet1.xml': worksheetXml,
+    'xl/styles.xml': stylesXml,
+  });
 }
 
 function toCents(value, fieldName) {
@@ -168,6 +354,31 @@ async function serveStatic(pathname, response) {
 const server = createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
   const pathname = stripBasePath(url.pathname);
+
+  if (pathname === '/api/returns/export' && request.method === 'GET') {
+    const month = url.searchParams.get('month');
+    if (!isMonthString(month)) {
+      sendJson(response, 400, { error: 'Selecciona un mes válido para la descarga.' });
+      return;
+    }
+
+    try {
+      const [firstDay, lastDay] = monthDateRange(month);
+      const entries = getByMonth.all(firstDay, lastDay);
+      const workbookBuffer = await buildMonthlyWorkbook(month, entries);
+      response.writeHead(200, {
+        'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'content-disposition': `attachment; filename="devoluciones-${month}.xlsx"`,
+        'content-length': workbookBuffer.length,
+        'cache-control': 'no-store',
+      });
+      response.end(workbookBuffer);
+    } catch (error) {
+      console.error(`No se pudo generar el Excel de ${month}:`, error);
+      sendJson(response, 500, { error: 'No se pudo preparar el Excel de ese mes.' });
+    }
+    return;
+  }
 
   if (pathname === '/api/returns' && request.method === 'GET') {
     const now = new Date();

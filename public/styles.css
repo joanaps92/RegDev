@@ -231,6 +231,16 @@ kbd { padding: 3px 7px; border-color: #bac6cb; color: #3f515b; font-size: 12px; 
 .date-picker-wrap svg { width: 21px; height: 21px; }
 .date-picker-wrap input { width: 145px; color: #263f4d; font-size: 14px; }
 .date-picker-wrap:focus-within, .input-wrap:focus-within { border-color: #087d78; box-shadow: 0 0 0 4px rgba(8,125,120,.16); }
+.month-export { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "label controls" "hint controls"; align-items: center; column-gap: 14px; row-gap: 3px; margin-top: 18px; padding: 12px 14px; border: 1px solid #dfe7e9; border-radius: 10px; background: #fafbfb; }
+.month-export > label { grid-area: label; color: #263f4d; font-size: 14px; font-weight: 700; }
+.month-export-hint { grid-area: hint; margin: 0; color: #53646d; font-size: 12px; }
+.month-export-controls { grid-area: controls; display: flex; align-items: center; gap: 8px; }
+.month-export-controls input { min-width: 176px; height: 50px; padding: 0 10px; border: 1px solid #b8c5cb; border-radius: 9px; background: #fff; color: #263f4d; font-size: 14px; font-weight: 600; }
+.month-export-controls input:focus-visible, .export-button:focus-visible { outline: 3px solid #087d78; outline-offset: 3px; }
+.export-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 50px; padding: 0 14px; border: 1px solid #066c68; border-radius: 9px; background: #087d78; color: #fff; cursor: pointer; font-size: 14px; font-weight: 700; white-space: nowrap; }
+.export-button:hover { background: #066c68; }
+.export-button:disabled { cursor: wait; opacity: .7; }
+.export-button svg { width: 20px; height: 20px; flex: 0 0 auto; }
 .day-overview { min-height: 96px; margin: 24px 0 20px; padding: 17px 18px; border-color: #dfe7e9; }
 .day-label-group { gap: 13px; }
 .day-calendar-icon { width: 42px; height: 42px; border-radius: 10px; font-size: 22px; }
@@ -277,6 +287,13 @@ td:first-child { padding-left: 18px; color: #4e616c; }
 .extra-large .keyboard-hint { font-size: 17px; }
 .extra-large .date-picker-wrap { height: 64px; }
 .extra-large .date-picker-wrap input { font-size: 19px; }
+.extra-large .month-export { padding: 16px; }
+.extra-large .month-export > label { font-size: 18px; }
+.extra-large .month-export-hint { font-size: 15px; }
+.extra-large .month-export-controls input, .extra-large .export-button { min-height: 64px; font-size: 18px; }
+.extra-large .month-export-controls input { height: 64px; }
+.extra-large .export-button { padding: 0 17px; }
+.extra-large .export-button svg { width: 24px; height: 24px; }
 .extra-large .day-label { font-size: 20px; }
 .extra-large .latest-label { font-size: 16px; }
 .extra-large .stat-label { font-size: 13px; }
@@ -309,6 +326,10 @@ td:first-child { padding-left: 18px; color: #4e616c; }
   .history-heading { gap: 15px; }
   .date-picker-wrap { width: 100%; }
   .date-picker-wrap input { width: 100%; }
+  .month-export { grid-template-columns: 1fr; grid-template-areas: "label" "hint" "controls"; row-gap: 5px; margin-top: 14px; padding: 13px; }
+  .month-export-controls { width: 100%; margin-top: 4px; }
+  .month-export-controls input { flex: 1 1 auto; min-width: 0; }
+  .export-button { padding: 0 11px; font-size: 13px; }
   .day-overview { align-items: flex-start; flex-direction: column; gap: 14px; margin: 18px 0 15px; padding: 15px; }
   .day-stats { width: 100%; justify-content: space-between; padding-top: 12px; border-top: 1px solid #dfe7e9; }
   .stat-block { align-items: flex-start; }
@@ -332,6 +353,11 @@ td:first-child { padding-left: 18px; color: #4e616c; }
   .extra-large .input-wrap { height: 74px; }
   .extra-large .input-wrap input { font-size: 30px; }
   .extra-large .field-hint { font-size: 17px; }
+  .extra-large .month-export > label { font-size: 17px; }
+  .extra-large .month-export-hint { font-size: 14px; }
+  .extra-large .month-export-controls input, .extra-large .export-button { min-height: 58px; font-size: 15px; }
+  .extra-large .month-export-controls input { height: 58px; }
+  .extra-large .export-button { padding: 0 9px; }
   .extra-large .result-description { font-size: 15px; }
   .extra-large .primary-button { min-height: 72px; font-size: 20px; }
   .extra-large td, .extra-large td:first-child { font-size: 19px; }

@@ -22,6 +22,8 @@ Los importes se guardan como céntimos enteros en SQLite. La base de datos se cr
 
 La pantalla abre por defecto el día más reciente con movimientos. El selector de fecha permite consultar los demás días; cada nuevo cálculo se guarda con la fecha y hora actuales.
 
+En el histórico puedes seleccionar un mes y descargar todas sus devoluciones en un archivo `.xlsx`, con un resumen mensual y una fila por movimiento.
+
 Variables de entorno:
 
 | Variable | Valor por defecto | Uso |
