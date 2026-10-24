@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f4f6f8">
+    <meta name="description" content="Registro diario de la caja de devoluciones.">
+    <title>Caja de devoluciones</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="Caja de devoluciones, inicio">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" fill="none">
+              <path d="M7 11.5h18v13H7z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+              <path d="M10 11.5V8h12v3.5M11 16h10M11 20h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M23.5 6.5v6M20.5 9.5h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <span class="brand-name">caja<span>clara</span></span>
+        </a>
+        <div class="topbar-meta">
+          <button class="text-size-button" id="textSizeButton" type="button" aria-label="Activar texto extra grande" aria-pressed="false" title="Ampliar texto">A<sup>+</sup></button>
+          <span class="status-dot" aria-hidden="true"></span>
+          <span class="topbar-location">Registro local</span>
+          <span class="meta-divider" aria-hidden="true"></span>
+          <span id="todayLabel">—</span>
+        </div>
+      </header>
+
+      <main>
+        <h1 class="sr-only">Caja de devoluciones</h1>
+        <div class="workspace">
+          <section class="panel calculator-panel" aria-labelledby="calculatorTitle">
+            <div class="panel-heading">
+              <div>
+                <p class="section-kicker">NUEVO MOVIMIENTO</p>
+                <h2 id="calculatorTitle">Calcular devolución</h2>
+              </div>
+              <span class="heading-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <rect x="5" y="3.5" width="14" height="17" rx="2.5" stroke="currentColor" stroke-width="1.7"/>
+                  <path d="M8.5 7.5h7M8.5 11h1m5 0h1m-7 4h1m5 0h1m-7 3h1m5-3h1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                </svg>
+              </span>
+            </div>
+
+            <form id="returnForm" novalidate>
+              <label class="field-label" for="paidTotal">Total que ya pagó el alumno</label>
+              <div class="input-wrap">
+                <span class="currency-prefix" aria-hidden="true">€</span>
+                <input id="paidTotal" name="paidTotal" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0,00" required autocomplete="off" aria-describedby="paidHint">
+                <span class="input-unit">EUR</span>
+              </div>
+              <p class="field-hint" id="paidHint">Importe total pagado por uno o varios artículos.</p>
+
+              <div class="subtract-divider" aria-hidden="true"><span>−</span></div>
+
+              <label class="field-label" for="returnedAmount">Precio del artículo que devuelve</label>
+              <div class="input-wrap">
+                <span class="currency-prefix" aria-hidden="true">€</span>
+                <input id="returnedAmount" name="returnedAmount" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0,00" required autocomplete="off" aria-describedby="returnedHint">
+                <span class="input-unit">EUR</span>
+              </div>
+              <p class="field-hint" id="returnedHint">Puedes usar decimales, por ejemplo 12,50.</p>
+
+              <div class="result-card" aria-live="polite">
+                <div class="result-copy">
+                  <span class="result-label">IMPORTE RESTANTE</span>
+                  <span class="result-description">Total pagado menos artículo devuelto</span>
+                </div>
+                <output id="remainingAmount" class="result-amount" for="paidTotal returnedAmount">—</output>
+              </div>
+
+              <p id="formError" class="form-error" role="alert" hidden></p>
+              <button class="primary-button" id="calculateButton" type="submit">
+                <span>Calcular y guardar</span>
+                <span class="button-arrow" aria-hidden="true">↗</span>
+              </button>
+              <p class="keyboard-hint"><kbd>Intro</kbd> también calcula y guarda</p>
+            </form>
+          </section>
+
+          <section class="panel history-panel" aria-labelledby="historyTitle">
+            <div class="history-heading">
+              <div>
+                <p class="section-kicker">MOVIMIENTOS GUARDADOS</p>
+                <h2 id="historyTitle">Histórico diario</h2>
+              </div>
+              <label class="date-picker-wrap" for="historyDate">
+                <span class="sr-only">Consultar devoluciones del día</span>
+                <svg viewBox="0 0 20 20" aria-hidden="true" fill="none">
+                  <rect x="2.7" y="4.5" width="14.6" height="12.4" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                  <path d="M6.2 2.8v3.4M13.8 2.8v3.4M2.8 8.1h14.4M6.2 11.3h.1m3.7 0h.1m3.7 0h.1m-7.7 3.1h.1m3.7 0h.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+                <input id="historyDate" type="date">
+              </label>
+            </div>
+
+            <div class="day-overview">
+              <div class="day-label-group">
+                <span class="day-calendar-icon" aria-hidden="true">▦</span>
+                <div>
+                  <span class="day-label" id="selectedDayLabel">—</span>
+                  <span class="latest-label" id="latestLabel">—</span>
+                </div>
+              </div>
+              <div class="day-stats">
+                <div class="stat-block">
+                  <span class="stat-label">MOVIMIENTOS</span>
+                  <strong id="dayCount">0</strong>
+                </div>
+                <div class="stat-block stat-block-total">
+                  <span class="stat-label">ARTÍCULOS DEVUELTOS</span>
+                  <strong id="dayReturnedTotal">0,00&nbsp;€</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="table-wrap" id="tableWrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">HORA</th>
+                    <th scope="col">PAGADO</th>
+                    <th scope="col">DEVUELTO</th>
+                    <th scope="col">RESTANTE</th>
+                  </tr>
+                </thead>
+                <tbody id="historyRows"></tbody>
+              </table>
+              <div id="emptyState" class="empty-state" hidden>
+                <span class="empty-icon" aria-hidden="true">⌁</span>
+                <strong>No hay devoluciones este día</strong>
+                <span>Cuando guardes un cálculo, aparecerá aquí.</span>
+              </div>
+            </div>
+            <div id="loadingState" class="loading-state" hidden>Actualizando histórico…</div>
+            <p class="history-footnote"><span aria-hidden="true">●</span> El histórico se conserva en la base de datos local.</p>
+          </section>
+        </div>
+      </main>
+
+      <footer class="footer">
+        <span>Caja clara</span>
+        <span>Registro de devoluciones</span>
+      </footer>
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    </div>
+  </body>
+</html>
