@@ -390,7 +390,7 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    const date = requestedDate || latestDate || today;
+    const date = requestedDate || today;
     const entries = getByDate.all(date);
     const totals = getDailyTotals.get(date);
     sendJson(response, 200, {

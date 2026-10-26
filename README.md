@@ -20,7 +20,7 @@ Abre <http://127.0.0.1:3000> en el navegador. Puedes cambiar el puerto con `PORT
 
 Los importes se guardan como céntimos enteros en SQLite. La base de datos se crea en `data/devoluciones.sqlite` en local o en la carpeta indicada por `DATA_DIR`. La fecha y hora de cada movimiento usan la zona horaria `Europe/Madrid`.
 
-La pantalla abre por defecto el día más reciente con movimientos. El selector de fecha permite consultar los demás días; cada nuevo cálculo se guarda con la fecha y hora actuales.
+La pantalla abre por defecto la fecha actual (hora de Madrid), aunque todavía no haya movimientos ese día. El selector permite consultar los demás días; cada nuevo cálculo se guarda con la fecha y hora actuales.
 
 En el histórico puedes seleccionar un mes y descargar todas sus devoluciones en un archivo `.xlsx`, con un resumen mensual y una fila por movimiento.
 
