@@ -452,7 +452,7 @@ const server = createServer(async (request, response) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Caja de devoluciones disponible en http://${HOST}:${PORT}`);
+  console.log(`CuentaClara disponible en http://${HOST}:${PORT}`);
   console.log(`Base de datos: ${DB_PATH}`);
 });
 

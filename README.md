@@ -1,4 +1,4 @@
-# Caja de devoluciones
+# CuentaClara
 
 Aplicación web para calcular el importe restante tras una devolución y consultar los movimientos por día.
 
